@@ -1,105 +1,85 @@
 # Wellio CLI Reference
 
-Use this reference for exact command selection and current product limits.
-
-## Runner
-
-Run every command through the skill's bundled launcher:
+Use this file for exact syntax and expected results. Use `wellio` below as shorthand for either runner:
 
 ```text
-python "<skill-dir>/scripts/run_wellio.py" -- COMMAND [ARGUMENTS] [OPTIONS]
+"<skill-dir>/scripts/wellio.exe" COMMAND ...
+python "<skill-dir>/scripts/run_wellio.py" -- COMMAND ...
 ```
 
-For a user-requested environment location or manager:
-
-```text
-python "<skill-dir>/scripts/run_wellio.py" --env-dir "<path>" --manager auto -- COMMAND [ARGUMENTS] [OPTIONS]
-```
-
-The launcher installs from the `runtime/` directory bundled with this skill. It must not download or install the separate `Wellio_CLI` repository. Read [runtime-setup.md](runtime-setup.md) for runtime behavior and troubleshooting.
+Prefer the EXE on Windows. See [runtime-setup.md](runtime-setup.md) for fallback and build behavior.
 
 ## Supported input
 
-- LAS files: current verification covers LAS 2.0, wrapped and unwrapped.
-- DLIS files: RP66v1; scalar channels can be queried and exported.
-- WITSML files: offline WITSML 1.4.1.1 `logs` XML documents with depth or time indexes.
-- `.xml` is routed as WITSML but still requires a valid supported namespace and version.
+| Input | Support |
+|---|---|
+| LAS | LAS 2.0; wrapped or unwrapped |
+| DLIS | RP66v1; scalar channels are queryable/exportable |
+| WITSML | Offline 1.4.1.1 `logs` XML with depth or time indexes |
+| `.xml` | Routed to WITSML, then namespace/version validated |
 
-Wellio does not provide WITSML server access, ETP, curve editing, file writing, database management, or built-in petrophysical interpretation.
+Do not expect WITSML server/ETP access, well-log editing/writing, database management, or built-in petrophysical interpretation.
 
-## Commands
+## Commands and results
 
-Replace `wellio` below with the bundled launcher followed by `--`.
+| Command | Purpose | Expected result |
+|---|---|---|
+| `wellio detect FILE` | Detect by extension | One token: `las`, `dlis`, `witsml`, or `unknown`; content is not parsed |
+| `wellio info FILE` | Plan a query | Well/index metadata, ranges, datasets, row status/counts, curve names and units |
+| `wellio inspect FILE [--format text\|json]` | Retrieve full metadata | Normalized and native metadata; raw curve samples excluded |
+| `wellio curve FILE CURVE [OPTIONS]` | Query one curve | Text summary by default; indexed CSV/JSON rows when requested |
+| `wellio extract FILE [OPTIONS]` | Query/export several curves | Index plus requested scalar curves as CSV/JSON/Parquet |
 
-```text
-wellio detect FILE
-```
+For DLIS, `info` lists logical files and frames without loading sample arrays. For WITSML, it lists each log separately.
 
-Return the extension-based format: `las`, `dlis`, `witsml`, or `unknown`. This does not parse or validate file content.
+Text `curve` output contains the selected range, point/valid/missing counts, completeness, first/last values, and—when numeric—minimum, maximum, mean, median, and sample standard deviation.
 
-```text
-wellio info FILE
-```
+## Selectors and bounds
 
-Return well metadata, index details, ranges, row/curve counts, and curve inventory. For DLIS, list logical files and frames without loading curve arrays. For WITSML, list each log separately.
-
-```text
-wellio inspect FILE [--format text|json] [--logical-file INDEX|--log INDEX]
-```
-
-Return detailed normalized and native metadata. Inspection excludes raw curve samples.
+Use these options where accepted:
 
 ```text
-wellio curve FILE CURVE_NAME [OPTIONS]
+--logical-file INDEX, --log INDEX   Select DLIS logical file or WITSML log
+--frame INDEX                       Select DLIS frame
+--start VALUE                       Inclusive primary-index start
+--stop VALUE                        Inclusive primary-index stop
+--rows START:STOP                   Zero-based, half-open row slice
+--curve NAME                        Select a curve; repeat for extract
 ```
 
-Summarize or return one curve. Relevant options:
+Rules:
 
-```text
---logical-file INDEX, --log INDEX
---frame INDEX
---start VALUE
---stop VALUE
---rows START:STOP
---format text|csv|json
---output PATH
---force
-```
-
-Text output includes point counts, completeness, first/last values, and numeric minimum, maximum, mean, median, and sample standard deviation. CSV or JSON includes index and sample values.
-
-```text
-wellio extract FILE [OPTIONS]
-```
-
-Return selected curves or all scalar curves. Relevant options:
-
-```text
---curve NAME              Repeat for multiple curves
---logical-file INDEX, --log INDEX
---frame INDEX
---start VALUE
---stop VALUE
---rows START:STOP
---format csv|json|parquet
---output PATH
---force
-```
-
-The primary index is always included. Parquet is binary and requires `--output PATH`.
-
-## Query rules
-
-- Treat `--start` and `--stop` as inclusive primary-index bounds.
-- Treat `--rows START:STOP` as a zero-based, half-open positional slice.
-- Allow omitted row bounds such as `:100` and `100:`.
+- Treat all selectors as zero-based.
+- Omit a dataset/frame selector only when exactly one choice exists.
+- Allow open row bounds: `:100` or `100:`.
 - Never combine `--rows` with `--start` or `--stop`.
-- Treat DLIS logical-file and frame selectors as zero-based.
-- Treat WITSML log selectors as zero-based.
-- Omit a selector only when exactly one valid choice exists.
 - Expect an empty selection to fail.
-- Expect multidimensional DLIS channels and WITSML array curves to be visible in `info` and `inspect` but rejected by tabular `curve` and `extract` operations.
-- Protect existing output files unless `--force` is explicitly provided.
-- Ensure the output directory already exists.
+- Reject multidimensional DLIS channels and WITSML arrays from tabular `curve`/`extract`; inspect them with `info` or `inspect`.
+- Omit `--curve` from `extract` to include all scalar curves.
+- Include the primary index in every CSV/JSON/Parquet result.
 
-Application failures use exit code `1` and `Error: MESSAGE`. Invalid CLI usage uses exit code `2`.
+## Output
+
+```text
+--format text|csv|json       curve
+--format csv|json|parquet    extract
+--output PATH
+--force
+```
+
+- Print text, CSV, or JSON to stdout when `--output` is omitted.
+- Require `--output PATH` for Parquet.
+- Require the output directory to exist.
+- Refuse to replace an existing file unless `--force` is supplied.
+- Use exit code `1` with `Error: MESSAGE` for application/data failures.
+- Use exit code `2` for invalid CLI syntax or argument validation.
+
+## Examples
+
+```text
+wellio info "sample.las"
+wellio curve "sample.las" GR --start 1000 --stop 1100
+wellio curve "sample.xml" ROP --log 0 --rows 0:20 --format json
+wellio extract "sample.dlis" --logical-file 0 --frame 0 --curve GR --curve TENS --format csv
+wellio extract "sample.las" --curve GR --format parquet --output "gr.parquet"
+```
