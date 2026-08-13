@@ -7,13 +7,21 @@ description: Inspect and analyze offline oilfield well-log files with the Wellio
 
 Use Wellio as the data-retrieval engine. Answer the user's actual question from the retrieved data. Do not stop after explaining a command or dumping raw CLI output.
 
-## Resolve the command
+## Run the bundled runtime
 
 1. Confirm that the referenced log file is locally accessible. Ask for the file or path only when it is missing.
-2. Try `wellio --help`.
-3. If it is unavailable and Conda exists, try `conda run -n cx_wellio wellio --help` and use that prefix for later commands.
-4. If Wellio is still unavailable, read [references/cli-reference.md](references/cli-reference.md) and install it only when installation is within the user's request or permission. Otherwise explain the missing dependency.
-5. Quote every file path passed to the shell.
+2. Locate this skill's directory and use `scripts/run_wellio.py` for every Wellio operation. Do not clone, pull, or install the separate `Wellio_CLI` repository. Do not substitute a globally installed Wellio command.
+3. Invoke the launcher with an available Python interpreter and place Wellio arguments after `--`:
+
+   ```text
+   python "<skill-dir>/scripts/run_wellio.py" -- info "<log-file>"
+   ```
+
+4. Let the launcher create and maintain the isolated runtime automatically. It installs the Wellio code bundled in this skill under `runtime/` and downloads only the declared third-party Python dependencies.
+5. Honor any environment location explicitly requested by the user by passing `--env-dir "<requested-path>"`. Otherwise let `WELLIO_ENV_DIR` or the safe platform default decide the location. Do not ask the user to choose a routine location.
+6. Honor a requested environment manager with `--manager uv`, `--manager venv`, or `--manager conda`. Otherwise keep `--manager auto`.
+7. Never install into system Python, Conda `base`, `VIRTUAL_ENV`, or `CONDA_PREFIX`. Never delete or replace an existing non-Wellio directory.
+8. If the launcher reports that no safe environment manager is available, explain the blocker and ask before installing a Python runtime manager. Do not make the user run setup commands themselves.
 
 Treat reading and terminal output as the default. Create an output file only when the user requests one or when a temporary file is necessary to process a large result. Never use `--force` without explicit permission to replace that exact file.
 
@@ -35,7 +43,7 @@ Treat reading and terminal output as the default. Create an output file only whe
 6. Apply `--start` and `--stop` to depth or time bounds. Apply `--rows START:STOP` only when the user asks by row position. Never combine row slicing with index bounds.
 7. Verify that the returned interval and units match the request. Do not interpolate an unrecorded value unless the user explicitly asks for interpolation. Label a nearest-sample result as nearest rather than exact.
 
-Read [references/cli-reference.md](references/cli-reference.md) for command syntax, selection rules, supported formats, and current limitations.
+Read [references/cli-reference.md](references/cli-reference.md) for command syntax, selection rules, supported formats, and current limitations. Read [references/runtime-setup.md](references/runtime-setup.md) when the launcher needs troubleshooting or the user requests a custom environment.
 
 ## Answer natural-language questions
 

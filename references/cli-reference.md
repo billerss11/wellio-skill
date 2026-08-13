@@ -4,22 +4,19 @@ Use this reference for exact command selection and current product limits.
 
 ## Runner
 
-Use one working runner consistently:
+Run every command through the skill's bundled launcher:
 
 ```text
-wellio
-conda run -n cx_wellio wellio
-python -m wellio
+python "<skill-dir>/scripts/run_wellio.py" -- COMMAND [ARGUMENTS] [OPTIONS]
 ```
 
-Prefer the first runner that successfully returns help. If installation is required and permitted, use an isolated Python 3.12+ environment. The source project is `https://github.com/billerss11/Wellio_CLI`.
+For a user-requested environment location or manager:
 
-Example Conda installation:
-
-```powershell
-conda create -n cx_wellio python=3.12 -y
-conda run -n cx_wellio python -m pip install "git+https://github.com/billerss11/Wellio_CLI.git"
+```text
+python "<skill-dir>/scripts/run_wellio.py" --env-dir "<path>" --manager auto -- COMMAND [ARGUMENTS] [OPTIONS]
 ```
+
+The launcher installs from the `runtime/` directory bundled with this skill. It must not download or install the separate `Wellio_CLI` repository. Read [runtime-setup.md](runtime-setup.md) for runtime behavior and troubleshooting.
 
 ## Supported input
 
@@ -32,7 +29,7 @@ Wellio does not provide WITSML server access, ETP, curve editing, file writing, 
 
 ## Commands
 
-Replace `wellio` below with the resolved runner when necessary.
+Replace `wellio` below with the bundled launcher followed by `--`.
 
 ```text
 wellio detect FILE

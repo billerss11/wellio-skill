@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wellio-skill-runtime"
+version = "0.1.0"
+description = "Bundled runtime for the Wellio Codex skill."
+requires-python = ">=3.12"
+dependencies = [
+    "defusedxml>=0.7.1,<0.8",
+    "dlisio>=1.0.4,<2",
+    "lasio>=0.32,<0.33",
+    "pandas>=3.0,<4",
+    "pyarrow>=18,<26",
+    "typer>=0.12",
+]
+
+[project.scripts]
+wellio = "wellio.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
