@@ -2,11 +2,14 @@
 
 from wellio.core import (
     CurveSummary,
+    DataSelection,
     FormatDetector,
+    SelectedCurve,
     detect_format,
     open_file,
     open_log,
     parse_row_slice,
+    select_data,
     select_dataframe,
     summarize_curve,
 )
@@ -18,6 +21,7 @@ from wellio.models import (
     LogicalFile,
     MetadataItem,
     MetadataSection,
+    SampleAxis,
     WellLogFile,
     WellLogFormat,
 )
@@ -25,12 +29,15 @@ from wellio.models import (
 __all__ = [
     "Curve",
     "CurveSummary",
+    "DataSelection",
     "Dataset",
     "FormatDetector",
     "IndexKind",
     "LogicalFile",
     "MetadataItem",
     "MetadataSection",
+    "SampleAxis",
+    "SelectedCurve",
     "WellioError",
     "WellLogFile",
     "WellLogFormat",
@@ -38,8 +45,9 @@ __all__ = [
     "open_file",
     "open_log",
     "parse_row_slice",
+    "select_data",
     "select_dataframe",
     "summarize_curve",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

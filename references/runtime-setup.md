@@ -11,7 +11,9 @@ Keep execution inside this skill. Never clone or install the separate `Wellio_CL
 | Non-Windows platform | Run the Python launcher |
 | EXE runs but reports a command/data error | Report the error; do not fall back |
 
-The EXE contains Python and all dependencies. It creates no environment and uses no network.
+The EXE contains Python and all dependencies, including the Arrow runtime used
+for scalar and nested N-dimensional Parquet. It creates no environment and
+uses no network.
 
 ## Run the fallback
 
@@ -27,6 +29,10 @@ The launcher:
 4. Uses the Tsinghua PyPI mirror, then retries official PyPI once.
 5. Reinstalls when bundled runtime files change.
 6. Runs the environment's `wellio` command without activation.
+
+Status, environment-creation, and package-installation messages go to stderr.
+Stdout is reserved for Wellio command output, so first-run JSON/CSV remains
+machine-parseable by another program or AI agent.
 
 Use launcher options before `--`:
 
@@ -62,7 +68,22 @@ Require Conda. The script:
 3. Builds one Windows executable with only required packages.
 4. Writes `scripts/wellio.exe` and prints its size and SHA-256.
 
-Expected result: a standalone EXE of about 59 MiB. PyInstaller writes temporary files under ignored `build/`; do not commit that directory or any environment. Commit/distribute only `scripts/wellio.exe` as the binary build artifact.
+The exact executable size can change with dependency builds. A successful
+build prints the final size and SHA-256. PyInstaller writes temporary files
+under ignored `build/`; do not commit that directory or any environment.
+Commit/distribute only `scripts/wellio.exe` as the binary build artifact.
+
+After building, verify at minimum:
+
+```text
+scripts\wellio.exe --help
+scripts\wellio.exe info FILE
+scripts\wellio.exe curve FILE ARRAY --rows 0:1 --format structured-json
+scripts\wellio.exe extract FILE --curve SCALAR --curve ARRAY --rows 0:1 --format parquet --output RESULT.parquet
+```
+
+Confirm that structured JSON reports the expected selected shape and that the
+Parquet array field is nested with matching values and shape metadata.
 
 ## Recover from setup errors
 

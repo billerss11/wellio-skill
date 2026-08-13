@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
+from math import prod
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,7 @@ from wellio.models import (
     Dataset,
     IndexKind,
     LogicalFile,
+    SampleAxis,
     WellLogFile,
     WellLogFormat,
 )
@@ -90,9 +92,77 @@ def _index_kind(index_type: object) -> IndexKind | None:
     return IndexKind.OTHER if normalized else None
 
 
+def _axis_values(value: object) -> tuple[object, ...]:
+    if value is None:
+        return ()
+    try:
+        return tuple(value)  # type: ignore[arg-type]
+    except TypeError:
+        return (value,)
+
+
+def _sample_axis(native_axis: Any) -> SampleAxis:
+    coordinates = _axis_values(getattr(native_axis, "coordinates", None))
+    spacing = getattr(native_axis, "spacing", None)
+    coordinate_unit = _attribute_unit(native_axis, "COORDINATES")
+    spacing_unit = _attribute_unit(native_axis, "SPACING")
+    validation_errors = []
+    if coordinate_unit and spacing_unit and coordinate_unit != spacing_unit:
+        validation_errors.append(
+            f"axis {native_axis.name!r} coordinate unit {coordinate_unit!r} "
+            f"does not match spacing unit {spacing_unit!r}"
+        )
+    return SampleAxis(
+        name=_clean_text(getattr(native_axis, "name", None)),
+        identifier=_clean_text(getattr(native_axis, "axis_id", None)),
+        unit=coordinate_unit or spacing_unit,
+        coordinates=coordinates,
+        spacing=spacing,
+        native=native_axis,
+        metadata={
+            "origin": getattr(native_axis, "origin", None),
+            "copy_number": getattr(native_axis, "copynumber", None),
+            "declared_coordinates": coordinates,
+            "declared_spacing": spacing,
+            "coordinate_unit": coordinate_unit,
+            "spacing_unit": spacing_unit,
+            "validation_errors": validation_errors,
+        },
+    )
+
+
+def _attribute_unit(native_object: Any, name: str) -> str | None:
+    try:
+        return _clean_text(native_object.attic[name].units)
+    except KeyError:
+        return None
+
+
+def _sample_axes(channel: Any) -> tuple[SampleAxis, ...]:
+    dimensions = tuple(int(size) for size in channel.dimension)
+    declared = tuple(_sample_axis(axis) for axis in channel.axis)
+    if prod(dimensions) <= 1 or len(declared) >= len(dimensions):
+        return declared
+
+    missing = len(dimensions) - len(declared)
+    positional = tuple(
+        SampleAxis(
+            metadata={
+                "coordinate_source": "position",
+                "synthetic": True,
+                "validation_errors": [],
+            }
+        )
+        for _ in range(missing)
+    )
+    return (*positional, *declared)
+
+
 def _frame_dataset(
     source: Path,
     logical_name: str,
+    logical_index: int,
+    frame_index: int,
     native_frame: Any,
     resource: _DlisResource,
 ) -> Dataset:
@@ -117,6 +187,8 @@ def _frame_dataset(
             unit=_clean_text(getattr(channel, "units", None)),
             description=_clean_text(getattr(channel, "long_name", None)),
             sample_shape=tuple(int(size) for size in channel.dimension),
+            sample_axes=_sample_axes(channel),
+            element_limit=tuple(int(size) for size in channel.element_limit),
             origin=int(channel.origin),
             copy_number=int(channel.copynumber),
             native=channel,
@@ -143,6 +215,8 @@ def _frame_dataset(
         index_kind=_index_kind(index_type),
         metadata={
             "logical_file": logical_name,
+            "logical_file_index": logical_index,
+            "frame_index": frame_index,
             "index_type": _clean_text(index_type),
             "direction": _clean_text(getattr(native_frame, "direction", None)),
             "spacing": getattr(native_frame, "spacing", None),
@@ -178,8 +252,15 @@ def read_dlis(path: str | Path) -> WellLogFile:
         for logical_index, native_logical in enumerate(physical):
             logical_name = _logical_name(native_logical, logical_index)
             frames = [
-                _frame_dataset(source, logical_name, frame, resource)
-                for frame in native_logical.frames
+                _frame_dataset(
+                    source,
+                    logical_name,
+                    logical_index,
+                    frame_index,
+                    frame,
+                    resource,
+                )
+                for frame_index, frame in enumerate(native_logical.frames)
             ]
             logical_files.append(
                 LogicalFile(

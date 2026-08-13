@@ -98,6 +98,21 @@ def _frame_payload(frame_index: int, dataset: Any) -> dict[str, object]:
                 "unit": curve.unit,
                 "description": curve.description,
                 "sample_shape": list(curve.sample_shape),
+                "element_limit": list(curve.element_limit),
+                "sample_axes": [
+                    {
+                        "position": axis_index,
+                        "name": axis.name,
+                        "identifier": axis.identifier,
+                        "unit": axis.unit,
+                        "property_type": axis.property_type,
+                        "coordinates": _json_safe(axis.coordinates),
+                        "spacing": _json_safe(axis.spacing),
+                        "metadata": _json_safe(axis.metadata),
+                        "fingerprint": getattr(axis.native, "fingerprint", None),
+                    }
+                    for axis_index, axis in enumerate(curve.sample_axes)
+                ],
                 "is_scalar": curve.is_scalar,
             }
             for curve in dataset.curves
@@ -169,6 +184,15 @@ def dlis_inspection_text(
                     f"{channel['unit'] or 'Not available'}; "
                     f"sample_shape={tuple(channel['sample_shape'])}"
                 )
+                for axis in channel["sample_axes"]:
+                    lines.append(
+                        f"    axis[{axis['position']}]; "
+                        f"name={_text_value(axis['name'])}; "
+                        f"id={_text_value(axis['identifier'])}; "
+                        f"unit={_text_value(axis['unit'])}; "
+                        f"coordinates={_text_value(axis['coordinates'])}; "
+                        f"spacing={_text_value(axis['spacing'])}"
+                    )
         lines.append("Objects:")
         for item in logical["objects"]:
             lines.append(

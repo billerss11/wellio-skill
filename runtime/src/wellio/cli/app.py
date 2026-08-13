@@ -2,27 +2,41 @@
 
 from collections import Counter
 from enum import StrEnum
+from math import prod
 from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 import typer
 
 from wellio.core import (
     CurveSummary,
+    DataSelection,
     detect_format,
     open_file,
     parse_row_slice,
+    select_data,
     select_dataframe,
     summarize_curve,
 )
 from wellio.exporters import (
+    array_preview,
     dataframe_csv,
     dataframe_json,
     dataframe_parquet,
     inspection_json,
     inspection_text,
+    long_csv,
+    selection_parquet,
+    structured_json,
 )
 from wellio.models import Dataset, WellLogFile, WellLogFormat
+
+if TYPE_CHECKING:
+    import pandas as pd
+
+
+MAX_STDOUT_DATA_VALUES = 100_000
+MAX_STDOUT_BYTES = 256 * 1024
 
 app = typer.Typer(
     help="Inspect and convert oilfield well-log files.",
@@ -43,6 +57,8 @@ class CurveOutput(StrEnum):
     TEXT = "text"
     CSV = "csv"
     JSON = "json"
+    STRUCTURED_JSON = "structured-json"
+    LONG_CSV = "long-csv"
 
 
 class DataOutput(StrEnum):
@@ -51,6 +67,8 @@ class DataOutput(StrEnum):
     CSV = "csv"
     JSON = "json"
     PARQUET = "parquet"
+    STRUCTURED_JSON = "structured-json"
+    LONG_CSV = "long-csv"
 
 
 @app.callback()
@@ -193,6 +211,13 @@ def curve(
         bool,
         typer.Option("--force", help="Overwrite an existing output file."),
     ] = False,
+    force_stdout: Annotated[
+        bool,
+        typer.Option(
+            "--force-stdout",
+            help="Allow exhaustive output above standard-output safety limits.",
+        ),
+    ] = False,
 ) -> None:
     """Describe one curve over a depth, time, or row interval."""
 
@@ -200,20 +225,70 @@ def curve(
         with open_file(file) as well_file:
             dataset = well_file.get_dataset(logical_file, frame)
             row_slice = parse_row_slice(rows) if rows is not None else None
-            summary, selected_frame = summarize_curve(
-                dataset,
-                curve_name,
-                start=start,
-                stop=stop,
-                rows=row_slice,
-            )
-            if output_format is CurveOutput.CSV:
-                rendered = dataframe_csv(selected_frame)
-            elif output_format is CurveOutput.JSON:
-                rendered = dataframe_json(selected_frame)
+            selected_curve = dataset.get_curve(curve_name)
+            if output_format in {
+                CurveOutput.STRUCTURED_JSON,
+                CurveOutput.LONG_CSV,
+            } or (output_format is CurveOutput.TEXT and not selected_curve.is_scalar):
+                selection = select_data(
+                    dataset,
+                    [selected_curve.mnemonic],
+                    start=start,
+                    stop=stop,
+                    rows=row_slice,
+                )
+                if output_format is CurveOutput.STRUCTURED_JSON:
+                    _guard_selection_stdout(
+                        selection,
+                        output=output,
+                        force_stdout=force_stdout,
+                    )
+                    rendered = structured_json(selection)
+                elif output_format is CurveOutput.LONG_CSV:
+                    _guard_selection_stdout(
+                        selection,
+                        output=output,
+                        force_stdout=force_stdout,
+                    )
+                    rendered = long_csv(selection)
+                else:
+                    rendered = array_preview(selection) + "\n"
             else:
-                rendered = _format_curve_summary(dataset, summary)
-            _emit_or_write(rendered, output=output, force=force)
+                if not selected_curve.is_scalar:
+                    raise ValueError(
+                        f"Curve {selected_curve.mnemonic!r} has sample shape "
+                        f"{selected_curve.sample_shape}; use --format "
+                        "structured-json or --format long-csv"
+                    )
+                summary, selected_frame = summarize_curve(
+                    dataset,
+                    selected_curve.mnemonic,
+                    start=start,
+                    stop=stop,
+                    rows=row_slice,
+                )
+                if output_format is CurveOutput.CSV:
+                    _guard_dataframe_stdout(
+                        selected_frame,
+                        output=output,
+                        force_stdout=force_stdout,
+                    )
+                    rendered = dataframe_csv(selected_frame)
+                elif output_format is CurveOutput.JSON:
+                    _guard_dataframe_stdout(
+                        selected_frame,
+                        output=output,
+                        force_stdout=force_stdout,
+                    )
+                    rendered = dataframe_json(selected_frame)
+                else:
+                    rendered = _format_curve_summary(dataset, summary)
+            _emit_or_write(
+                rendered,
+                output=output,
+                force=force,
+                force_stdout=force_stdout,
+            )
     except Exception as exc:
         _exit_with_error(exc)
 
@@ -231,7 +306,11 @@ def extract(
     ],
     curve_names: Annotated[
         list[str] | None,
-        typer.Option("--curve", "-c", help="Curve to include; repeat as needed."),
+        typer.Option(
+            "--curve",
+            "-c",
+            help="Curve to include; repeat as needed. Arrays must be explicit.",
+        ),
     ] = None,
     logical_file: Annotated[
         int | None,
@@ -269,8 +348,15 @@ def extract(
         bool,
         typer.Option("--force", help="Overwrite an existing output file."),
     ] = False,
+    force_stdout: Annotated[
+        bool,
+        typer.Option(
+            "--force-stdout",
+            help="Allow exhaustive output above standard-output safety limits.",
+        ),
+    ] = False,
 ) -> None:
-    """Extract selected curve data as CSV, JSON, or Parquet."""
+    """Extract selected scalar or explicitly requested array curve data."""
 
     try:
         if output_format is DataOutput.PARQUET and output is None:
@@ -278,20 +364,80 @@ def extract(
         with open_file(file) as well_file:
             dataset = well_file.get_dataset(logical_file, frame)
             row_slice = parse_row_slice(rows) if rows is not None else None
-            selected_frame = select_dataframe(
-                dataset,
-                curve_names,
-                start=start,
-                stop=stop,
-                rows=row_slice,
+            explicit_curves = (
+                [dataset.get_curve(name) for name in curve_names]
+                if curve_names is not None
+                else []
             )
-            if output_format is DataOutput.JSON:
-                rendered = dataframe_json(selected_frame)
-            elif output_format is DataOutput.PARQUET:
-                rendered = dataframe_parquet(selected_frame)
+            includes_arrays = any(not curve.is_scalar for curve in explicit_curves)
+            if output_format in {
+                DataOutput.STRUCTURED_JSON,
+                DataOutput.LONG_CSV,
+            } or (output_format is DataOutput.PARQUET and includes_arrays):
+                selection = select_data(
+                    dataset,
+                    curve_names,
+                    start=start,
+                    stop=stop,
+                    rows=row_slice,
+                )
+                if output_format is DataOutput.STRUCTURED_JSON:
+                    _guard_selection_stdout(
+                        selection,
+                        output=output,
+                        force_stdout=force_stdout,
+                    )
+                    rendered = structured_json(selection)
+                elif output_format is DataOutput.LONG_CSV:
+                    _guard_selection_stdout(
+                        selection,
+                        output=output,
+                        force_stdout=force_stdout,
+                    )
+                    rendered = long_csv(selection)
+                else:
+                    rendered = selection_parquet(selection)
             else:
-                rendered = dataframe_csv(selected_frame)
-            _emit_or_write(rendered, output=output, force=force)
+                if includes_arrays:
+                    details = ", ".join(
+                        f"{curve.mnemonic} shape={curve.sample_shape}"
+                        for curve in explicit_curves
+                        if not curve.is_scalar
+                    )
+                    raise ValueError(
+                        f"Legacy {output_format.value} cannot export array "
+                        f"curves: {details}; use --format structured-json, "
+                        "long-csv, or parquet"
+                    )
+                selected_frame = select_dataframe(
+                    dataset,
+                    curve_names,
+                    start=start,
+                    stop=stop,
+                    rows=row_slice,
+                )
+                if output_format is DataOutput.JSON:
+                    _guard_dataframe_stdout(
+                        selected_frame,
+                        output=output,
+                        force_stdout=force_stdout,
+                    )
+                    rendered = dataframe_json(selected_frame)
+                elif output_format is DataOutput.PARQUET:
+                    rendered = dataframe_parquet(selected_frame)
+                else:
+                    _guard_dataframe_stdout(
+                        selected_frame,
+                        output=output,
+                        force_stdout=force_stdout,
+                    )
+                    rendered = dataframe_csv(selected_frame)
+            _emit_or_write(
+                rendered,
+                output=output,
+                force=force,
+                force_stdout=force_stdout,
+            )
     except Exception as exc:
         _exit_with_error(exc)
 
@@ -383,6 +529,7 @@ def _display_dlis_info(well_file: WellLogFile) -> None:
                     f"unit={_display_value(curve.unit)}; "
                     f"sample_shape={curve.sample_shape}"
                 )
+                _display_sample_axes(curve, indent="    ")
 
 
 def _display_witsml_info(well_file: WellLogFile) -> None:
@@ -427,6 +574,32 @@ def _display_witsml_info(well_file: WellLogFile) -> None:
                 f"type={_display_value(curve.data_type)}; "
                 f"sample_shape={curve.sample_shape}"
             )
+            _display_sample_axes(curve, indent="  ")
+
+
+def _display_sample_axes(curve: object, *, indent: str) -> None:
+    """Display declared array-axis metadata without loading sample values."""
+
+    sample_axes = getattr(curve, "sample_axes", ())
+    sample_shape = getattr(curve, "sample_shape", ())
+    for axis_index, axis in enumerate(sample_axes):
+        size = sample_shape[axis_index] if axis_index < len(sample_shape) else "?"
+        coordinates = tuple(axis.coordinates)
+        if len(coordinates) == size:
+            source = axis.metadata.get("coordinate_source", "recorded")
+        elif coordinates and axis.spacing is not None:
+            source = "derived"
+        else:
+            source = "position"
+        name = axis.name or "Not available"
+        identifier = axis.identifier or "Not available"
+        unit = axis.unit or "Not available"
+        typer.echo(
+            f"{indent}axis[{axis_index}]: name={name}; id={identifier}; "
+            f"size={size}; unit={unit}; coordinate_source={source}; "
+            f"declared_coordinates={len(coordinates)}; "
+            f"spacing={_display_value(axis.spacing)}"
+        )
 
 
 def _index_range(dataset: Dataset) -> str:
@@ -503,12 +676,93 @@ def _summary_value(value: object) -> str:
     return str(value)
 
 
-def _emit_or_write(rendered: str | bytes, *, output: Path | None, force: bool) -> None:
+def _selection_value_count(selection: DataSelection) -> int:
+    """Count selected index and curve values before text serialization."""
+
+    return len(selection.index_values) + sum(
+        len(selected.values) * prod(selected.curve.sample_shape)
+        for selected in selection.curves
+    )
+
+
+def _dataframe_value_count(frame: "pd.DataFrame") -> int:
+    """Count index and data cells emitted by a tabular serializer."""
+
+    return len(frame.index) + frame.size
+
+
+def _guard_selection_stdout(
+    selection: DataSelection,
+    *,
+    output: Path | None,
+    force_stdout: bool,
+) -> None:
+    """Reject oversized N-dimensional stdout output before serialization."""
+
+    _guard_stdout_value_count(
+        _selection_value_count(selection),
+        output=output,
+        force_stdout=force_stdout,
+    )
+
+
+def _guard_dataframe_stdout(
+    frame: "pd.DataFrame",
+    *,
+    output: Path | None,
+    force_stdout: bool,
+) -> None:
+    """Reject oversized tabular stdout output before serialization."""
+
+    _guard_stdout_value_count(
+        _dataframe_value_count(frame),
+        output=output,
+        force_stdout=force_stdout,
+    )
+
+
+def _guard_stdout_value_count(
+    value_count: int,
+    *,
+    output: Path | None,
+    force_stdout: bool,
+) -> None:
+    """Apply the standard-output data-value budget."""
+
+    if (
+        output is not None
+        or force_stdout
+        or value_count <= MAX_STDOUT_DATA_VALUES
+    ):
+        return
+    raise ValueError(
+        f"Refusing to write {value_count:,} data values to standard output "
+        f"(safety limit: {MAX_STDOUT_DATA_VALUES:,}). Use --rows, --start, or "
+        "--stop to reduce the selection; use --output PATH to write a file; "
+        "or use --force-stdout to override."
+    )
+
+
+def _emit_or_write(
+    rendered: str | bytes,
+    *,
+    output: Path | None,
+    force: bool,
+    force_stdout: bool = False,
+) -> None:
     """Write rendered output to stdout or an explicitly selected file."""
 
     if output is None:
         if isinstance(rendered, bytes):
             raise ValueError("Binary output requires --output PATH")
+        rendered_size = len(rendered.encode("utf-8"))
+        if not force_stdout and rendered_size > MAX_STDOUT_BYTES:
+            raise ValueError(
+                f"Refusing to write {rendered_size:,} bytes to standard output "
+                f"(safety limit: {MAX_STDOUT_BYTES:,} bytes). Use --rows, "
+                "--start, or --stop to reduce the selection; use --output PATH "
+                "to write a file; or use --force-stdout to override."
+            )
         typer.echo(rendered, nl=False)
         return
     if output.exists() and not force:

@@ -94,6 +94,8 @@ def _environment_wellio(path: Path):
 
 
 def _run_checked(command, **kwargs):
+    if "stdout" not in kwargs and not kwargs.get("capture_output"):
+        kwargs["stdout"] = sys.stderr
     return subprocess.run([str(part) for part in command], check=True, **kwargs)
 
 
@@ -297,7 +299,11 @@ def _install_runtime(
     fingerprint = _runtime_fingerprint()
     marker = path / MARKER_NAME
     wellio = _environment_wellio(path)
-    if wellio and marker.is_file() and marker.read_text(encoding="utf-8").strip() == fingerprint:
+    if (
+        wellio
+        and marker.is_file()
+        and marker.read_text(encoding="utf-8").strip() == fingerprint
+    ):
         return wellio
 
     _status(
@@ -383,11 +389,13 @@ def main() -> int:
                 manager = _existing_environment_manager(environment_dir)
                 if args.manager == "conda" and manager != "conda":
                     raise RuntimeError(
-                        f"Requested Conda, but {environment_dir} is not a Conda environment"
+                        f"Requested Conda, but {environment_dir} is not a "
+                        "Conda environment"
                     )
                 if args.manager in ("uv", "venv") and manager == "conda":
                     raise RuntimeError(
-                        f"Requested {args.manager}, but {environment_dir} is a Conda environment"
+                        f"Requested {args.manager}, but {environment_dir} is a "
+                        "Conda environment"
                     )
             else:
                 manager = _create_environment(environment_dir, args.manager)

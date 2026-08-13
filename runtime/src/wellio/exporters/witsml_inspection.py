@@ -160,6 +160,19 @@ def witsml_inspection_payload(
                         "description": curve.description,
                         "data_type": curve.data_type,
                         "sample_shape": list(curve.sample_shape),
+                        "sample_axes": [
+                            {
+                                "position": axis_index,
+                                "name": axis.name,
+                                "identifier": axis.identifier,
+                                "unit": axis.unit,
+                                "property_type": axis.property_type,
+                                "coordinates": _json_safe(axis.coordinates),
+                                "spacing": _json_safe(axis.spacing),
+                                "metadata": _json_safe(axis.metadata),
+                            }
+                            for axis_index, axis in enumerate(curve.sample_axes)
+                        ],
                         "is_scalar": curve.is_scalar,
                     }
                     for curve in dataset.curves
@@ -241,6 +254,15 @@ def witsml_inspection_text(
                 f"type={curve['data_type'] or 'Not available'}; "
                 f"sample_shape={tuple(curve['sample_shape'])}"
             )
+            for axis in curve["sample_axes"]:
+                lines.append(
+                    f"  axis[{axis['position']}]; "
+                    f"name={axis['name'] or 'Not available'}; "
+                    f"id={axis['identifier'] or 'Not available'}; "
+                    f"unit={axis['unit'] or 'Not available'}; "
+                    f"coordinates={axis['coordinates']}; "
+                    f"spacing={axis['spacing'] or 'Not available'}"
+                )
         lines.append("Data blocks:")
         for block_index, block in enumerate(log["data_blocks"]):
             lines.append(

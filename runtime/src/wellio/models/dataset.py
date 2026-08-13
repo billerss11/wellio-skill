@@ -24,6 +24,20 @@ class IndexKind(StrEnum):
 
 
 @dataclass(slots=True)
+class SampleAxis:
+    """One native per-sample dimension without inferred semantics."""
+
+    name: str | None = None
+    identifier: str | None = None
+    unit: str | None = None
+    property_type: str | None = None
+    coordinates: tuple[object, ...] = ()
+    spacing: object | None = None
+    native: object | None = None
+    metadata: dict[str, object] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
 class Curve:
     """A named sequence of well-log values."""
 
@@ -33,6 +47,8 @@ class Curve:
     description: str | None = None
     original_mnemonic: str | None = None
     sample_shape: tuple[int, ...] = ()
+    sample_axes: tuple[SampleAxis, ...] = ()
+    element_limit: tuple[int, ...] = ()
     origin: int | None = None
     copy_number: int | None = None
     native: object | None = None
@@ -127,7 +143,13 @@ class Dataset:
         import pandas as pd
 
         selected = (
-            self.curves if curves is None else [self.get_curve(name) for name in curves]
+            [
+                curve
+                for curve in self.curves
+                if curve.is_scalar and curve is not self.index
+            ]
+            if curves is None
+            else [self.get_curve(name) for name in curves]
         )
         unique_curves: list[Curve] = []
         seen: set[str] = set()

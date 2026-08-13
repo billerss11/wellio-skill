@@ -1,6 +1,6 @@
 ---
 name: wellio
-description: Inspect and analyze offline LAS, DLIS, and WITSML well-log files with the bundled Wellio CLI. Use when a user asks about file structure, well metadata, logical files or frames, curve inventories, values, statistics, missing data, extrema, trends, depth/time/row intervals, or CSV/JSON/Parquet export.
+description: Inspect, query, slice, and export offline LAS, DLIS, and WITSML well-log files with the bundled Wellio CLI, including scalar and arbitrary-rank multidimensional DLIS/WITSML curves. Use whenever a user asks about well-log structure, metadata, logical files or frames, curve inventories, sample shapes or axes, values, statistics, missing data, depth/time/row intervals, or CSV/JSON/Parquet data handoff for humans, Python, JavaScript, or AI agents.
 ---
 
 # Wellio Log Analysis
@@ -38,8 +38,10 @@ Never use a globally installed Wellio or clone the separate `Wellio_CLI` reposit
    | Structure and inventory | `info FILE` | Well/index metadata, datasets, row status/counts, curves, units |
    | Full metadata | `inspect FILE --format json` | Structured normalized/native metadata; no samples |
    | One-curve summary | `curve FILE CURVE` | Range, counts, completeness, first/last, statistics |
-   | Actual samples | `curve ... --format json` | Index plus one curve's rows |
-   | Multiple curves/export | `extract FILE --curve A --curve B` | Index plus selected scalar curves |
+   | Scalar samples | `curve ... --format json` | Index plus one scalar curve's rows |
+   | Array preview | `curve FILE ARRAY_CURVE` | Bounded shape, axes, and first/last samples |
+   | N-D samples for programs/agents | `curve ... --format structured-json` | Dimensions, coordinates, shape, and nested values |
+   | Multiple scalar/array curves | `extract ... --format structured-json|long-csv|parquet` | Mixed curves with reconstructable dimensions |
 
 4. Use `--start` and `--stop` for inclusive depth/time bounds. Use `--rows START:STOP` for a zero-based, half-open row slice. Never combine them.
 5. Verify the returned dataset, interval, units, and sample count before answering.
@@ -53,7 +55,19 @@ Read [references/cli-reference.md](references/cli-reference.md) for exact syntax
 - Ask one concise question when several datasets remain plausible. Never silently choose index `0`.
 - Match curves case-insensitively: exact mnemonic first, then an unambiguous original mnemonic or description.
 - Ask when a natural name maps to multiple curves.
-- Do not export multidimensional DLIS/WITSML curves as tabular data; report the shape shown by `info`.
+- Treat `sample_shape` and ordered sample axes as data facts. Do not infer axis meaning or units from a mnemonic.
+- Array curves must be selected explicitly. Omitted `--curve` selection intentionally remains scalar-only.
+- Legacy `csv` and `json` accept scalar curves only. Use `structured-json`, `long-csv`, or Parquet for arrays.
+
+## Handle multidimensional data
+
+- Prefer `structured-json` for sliced values returned to Python, JavaScript, or another AI agent. It preserves source rows, the primary index, deterministic dimensions, axes, coordinates, native order, and nested values.
+- Use `long-csv` when a consumer needs one row per scalar element and can reconstruct samples from row positions, shape, and axis columns.
+- Use Parquet with `--output PATH` for efficient mixed scalar/array file handoff. Array fields are nested lists with shape and dimension metadata.
+- Slice the primary row dimension with `--rows`, `--start`, or `--stop`. Internal sample axes are retained completely; sample-axis slicing is not supported.
+- Missing axis metadata is valid and uses positional coordinates. Report contradictory axis metadata as a curve-specific error rather than guessing.
+- Do not compute a generic minimum, mean, or trend across array dimensions unless the user specifies the operation and axes; a generic reduction could silently change the meaning.
+- On DLIS, a row slice limits selection and serialization but the native backend still decodes and caches the complete selected frame once. Warn the user before querying a very large frame when that cost matters.
 
 ## Return the result
 
@@ -82,9 +96,10 @@ Apply these rules:
 - For behavior over an interval, use samples and report meaningful change, range, center, variability, and completeness. Do not infer a trend from global extrema alone.
 - For extrema, ignore missing values and report the index; mention material ties.
 - For an unnamed “well overview,” choose at most eight representative scalar curves from descriptions and units, state the selection, and offer other curves.
-- For small exports, return the data directly. For large exports, write the requested CSV/JSON/Parquet file and link it.
+- For an array answer, identify its selected shape and sample axes before presenting values or a file.
+- For small sliced exports, return the data directly. For large exports, write the requested JSON/CSV/Parquet file and link it.
 
-Create output files only when requested or needed for a large result. Never use `--force` without permission to overwrite that exact path.
+Create output files only when requested or needed for a large result. The CLI refuses exhaustive stdout above its value/byte safety limits. Reduce the slice or use `--output`; prefer Parquet for very large machine handoffs because structured JSON and long CSV currently build the complete serialized result in memory. Use `--force-stdout` only when the user explicitly wants a large stdout pipeline. Never use `--force` without permission to overwrite that exact path.
 
 ## Interpretation boundary
 

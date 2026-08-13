@@ -1,0 +1,38 @@
+{
+  "skill_name": "wellio",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Inspect this unfamiliar DLIS file and tell me which frames contain multidimensional curves, including each curve's sample shape and declared axes. Do not load or print sample arrays yet.",
+      "expected_output": "A concise inventory based on info/inspect metadata that identifies logical files, frames, array mnemonics, shapes, units, and axes without loading frame samples.",
+      "files": [],
+      "expectations": [
+        "Runs info before selecting a dataset or curve",
+        "Reports array sample shapes and axes without claiming mnemonic-derived semantics",
+        "Does not export or print sample arrays during discovery"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Return rows 0:2 of the T2W curve from logical file 0, frame 0 in a form another Python or JavaScript agent can reconstruct exactly, including depth and the waveform coordinates.",
+      "expected_output": "A small wellio.structured.v1 JSON selection with source rows, primary index, deterministic dimensions, shape, axes, coordinates, and nested native-order values.",
+      "files": [],
+      "expectations": [
+        "Uses structured-json with an explicit two-row slice",
+        "Verifies selected shape, primary-index values, dimensions, and coordinates",
+        "Does not flatten or semantically reinterpret the waveform"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Export scalar GR together with array T2W from this large DLIS file for downstream Python processing. Keep the first ten frame rows and avoid dumping the payload into the terminal.",
+      "expected_output": "A mixed nested Parquet file created with an explicit row slice and output path, followed by verification of columns, nested shape metadata, and selected values.",
+      "files": [],
+      "expectations": [
+        "Selects both curves explicitly and writes Parquet to a file",
+        "Uses rows 0:10 and does not use force-stdout",
+        "Verifies the scalar column and nested array field after export"
+      ]
+    }
+  ]
+}

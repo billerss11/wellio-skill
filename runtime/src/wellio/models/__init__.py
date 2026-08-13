@@ -7,6 +7,7 @@ from wellio.models.dataset import (
     LogicalFile,
     MetadataItem,
     MetadataSection,
+    SampleAxis,
     WellLogFile,
 )
 from wellio.models.formats import WellLogFormat
@@ -18,6 +19,7 @@ __all__ = [
     "LogicalFile",
     "MetadataItem",
     "MetadataSection",
+    "SampleAxis",
     "WellLogFile",
     "WellLogFormat",
 ]

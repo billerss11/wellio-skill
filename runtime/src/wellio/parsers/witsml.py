@@ -16,6 +16,7 @@ from wellio.models import (
     Dataset,
     IndexKind,
     LogicalFile,
+    SampleAxis,
     WellLogFile,
     WellLogFormat,
 )
@@ -93,8 +94,45 @@ def _index_kind(index_type: str) -> IndexKind:
     return IndexKind.OTHER
 
 
-def _sample_shape(curve_element: Element, context: str) -> tuple[int, ...]:
-    axes: list[tuple[int, int]] = []
+def _coordinate_tokens(axis: Element, name: str) -> tuple[str, ...]:
+    value = _text(axis, name)
+    return tuple(value.split()) if value is not None else ()
+
+
+def _numeric_coordinates(
+    tokens: tuple[str, ...],
+    count: int,
+    axis_context: str,
+) -> tuple[tuple[object, ...], object | None, str | None]:
+    try:
+        declared = tuple(float(token) for token in tokens)
+    except ValueError:
+        return (), None, f"{axis_context} has non-numeric doubleValues"
+    if len(declared) > count:
+        return declared, None, (
+            f"{axis_context} declares {len(declared)} coordinates for count {count}"
+        )
+    if len(declared) == count:
+        spacing = declared[-1] - declared[-2] if len(declared) >= 2 else None
+        return declared, spacing, None
+    if len(declared) < 2:
+        return declared, None, (
+            f"{axis_context} needs at least two numeric coordinates to expand "
+            f"to count {count}"
+        )
+    spacing = declared[-1] - declared[-2]
+    expanded = list(declared)
+    while len(expanded) < count:
+        expanded.append(expanded[-1] + spacing)
+    return tuple(expanded), spacing, None
+
+
+def _sample_axes(
+    curve_element: Element,
+    context: str,
+) -> tuple[tuple[int, ...], tuple[SampleAxis, ...]]:
+    axes: list[tuple[int, int, SampleAxis]] = []
+    order_errors: list[str] = []
     for axis_index, axis in enumerate(_children(curve_element, "axisDefinition")):
         axis_context = f"{context} axisDefinition {axis_index}"
         try:
@@ -104,14 +142,79 @@ def _sample_shape(curve_element: Element, context: str) -> tuple[int, ...]:
             raise WellioError(
                 f"{axis_context} order and count must be integers"
             ) from exc
-        if order < 1 or count < 1:
-            raise WellioError(f"{axis_context} order and count must be positive")
-        axes.append((order, count))
+        if count < 1:
+            raise WellioError(f"{axis_context} count must be positive")
+        if order < 1:
+            order_errors.append(f"{axis_context} order must be positive")
 
-    orders = [order for order, _ in axes]
+        numeric_tokens = _coordinate_tokens(axis, "doubleValues")
+        string_tokens = _coordinate_tokens(axis, "stringValues")
+        coordinate_error: str | None = None
+        coordinate_source = "position"
+        spacing: object | None = None
+        coordinates: tuple[object, ...] = ()
+        declared_coordinates: tuple[object, ...] = ()
+        if numeric_tokens and string_tokens:
+            coordinate_error = (
+                f"{axis_context} declares both doubleValues and stringValues"
+            )
+        elif numeric_tokens:
+            declared_coordinates = numeric_tokens
+            coordinates, spacing, coordinate_error = _numeric_coordinates(
+                numeric_tokens, count, axis_context
+            )
+            coordinate_source = (
+                "recorded" if len(numeric_tokens) == count else "derived"
+            )
+        elif string_tokens:
+            declared_coordinates = string_tokens
+            coordinates = string_tokens
+            coordinate_source = "recorded"
+            if len(string_tokens) != count:
+                coordinate_error = (
+                    f"{axis_context} declares {len(string_tokens)} string "
+                    f"coordinates for count {count}"
+                )
+
+        errors = [error for error in (coordinate_error,) if error is not None]
+        axes.append(
+            (
+                order,
+                count,
+                SampleAxis(
+                    name=_text(axis, "name"),
+                    identifier=_text(axis, "uid") or _clean(axis.attrib.get("uid")),
+                    unit=_text(axis, "uom") or _clean(axis.attrib.get("uom")),
+                    property_type=_text(axis, "propertyType"),
+                    coordinates=coordinates,
+                    spacing=spacing,
+                    native=axis,
+                    metadata={
+                        "order": order,
+                        "count": count,
+                        "declared_coordinates": declared_coordinates,
+                        "coordinate_source": coordinate_source,
+                        "validation_errors": errors,
+                    },
+                ),
+            )
+        )
+
+    orders = [order for order, _, _ in axes]
     if len(orders) != len(set(orders)):
-        raise WellioError(f"{context} has duplicate array-axis order values")
-    return tuple(count for _, count in sorted(axes))
+        order_errors.append(f"{context} has duplicate array-axis order values")
+    if orders and sorted(orders) != list(range(1, len(orders) + 1)):
+        order_errors.append(
+            f"{context} array-axis order values must be contiguous from 1"
+        )
+
+    ordered = sorted(axes, key=lambda item: item[0])
+    if order_errors and ordered:
+        ordered[0][2].metadata["validation_errors"].extend(order_errors)
+    return (
+        tuple(count for _, count, _ in ordered),
+        tuple(axis for _, _, axis in ordered),
+    )
 
 
 def _unique_curve_names(original_names: list[str]) -> list[str]:
@@ -156,6 +259,7 @@ def _curve_definitions(
         data_type = _required_text(element, "typeLogData", context).casefold()
         if data_type not in _INTEGER_TYPES | _FLOAT_TYPES | _TEXT_TYPES:
             raise WellioError(f"{context} has unsupported typeLogData {data_type!r}")
+        sample_shape, sample_axes = _sample_axes(element, context)
         curves.append(
             Curve(
                 mnemonic=mnemonic,
@@ -164,7 +268,8 @@ def _curve_definitions(
                 unit=_text(element, "unit"),
                 description=_text(element, "curveDescription"),
                 data_type=data_type,
-                sample_shape=_sample_shape(element, context),
+                sample_shape=sample_shape,
+                sample_axes=sample_axes,
                 native=element,
             )
         )
@@ -242,13 +347,29 @@ def _curve_value(
         raise WellioError(
             f"{context} has {len(values)} array values; expected {sample_count}"
         )
-    return tuple(
+    flat_values = tuple(
         (
             None
             if _is_null(item, curve_null, log_null)
             else _scalar_value(item, curve.data_type or "unknown", context)
         )
         for item in values
+    )
+    return _reshape_sample(flat_values, curve.sample_shape)
+
+
+def _reshape_sample(
+    values: tuple[object, ...],
+    shape: tuple[int, ...],
+) -> tuple[object, ...]:
+    """Reshape flat WITSML values in C order (order 1 is slowest)."""
+
+    if len(shape) <= 1:
+        return values
+    chunk_size = prod(shape[1:])
+    return tuple(
+        _reshape_sample(values[offset : offset + chunk_size], shape[1:])
+        for offset in range(0, len(values), chunk_size)
     )
 
 
@@ -351,6 +472,7 @@ def _dataset(source: Path, native_log: Element, log_index: int) -> Dataset:
         index_kind=_index_kind(index_type),
         metadata={
             "witsml_version": WITSML_VERSION,
+            "log_index": log_index,
             "log_uid": log_uid,
             "well_uid": _clean(native_log.attrib.get("uidWell")),
             "wellbore_uid": _clean(native_log.attrib.get("uidWellbore")),
