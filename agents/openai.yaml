@@ -1,0 +1,4 @@
+interface:
+  display_name: "Wellio Log Analyst"
+  short_description: "Answer questions from LAS, DLIS, and WITSML logs"
+  default_prompt: "Use $wellio to inspect this well-log file and answer my question from the requested curves and interval."
