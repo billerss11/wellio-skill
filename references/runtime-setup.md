@@ -1,10 +1,20 @@
-# Bundled Runtime Setup
+# Executable and Runtime Setup
 
 The skill is self-contained. Its runnable Wellio source is stored under `runtime/`; never clone, pull, or install the separate `Wellio_CLI` repository.
 
 ## Normal operation
 
-Run `scripts/run_wellio.py` with Wellio arguments after `--`:
+On Windows, run the bundled executable first:
+
+```text
+"<skill-dir>/scripts/wellio.exe" info "<log-file>"
+```
+
+The executable includes Python and all Wellio dependencies. It does not create an environment or access a package index.
+
+Use `scripts/run_wellio.py` only when `wellio.exe` is missing, the platform is not Windows, or the operating system cannot launch the executable. A Wellio command or input-file error from a successfully launched EXE is not a reason to fall back.
+
+Pass Wellio arguments to the fallback launcher after `--`:
 
 ```text
 python "<skill-dir>/scripts/run_wellio.py" -- info "<log-file>"
@@ -20,6 +30,18 @@ The launcher performs these steps automatically:
 6. Use the Tsinghua PyPI mirror by default and retry official PyPI once if the mirror fails.
 7. Detect changes to the bundled runtime and reinstall it when its content changes.
 8. Run the bundled `wellio` executable directly without activating the environment.
+
+## Build the Windows executable
+
+After cloning or pulling the skill repository on Windows, run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File ".\scripts\build_portable_exe.ps1"
+```
+
+The build script requires Conda. It safely reuses or creates the managed `wellio-skill` Conda environment, installs the bundled runtime and PyInstaller, and writes the one-file build to `scripts/wellio.exe`. It refuses to modify an existing `wellio-skill` environment unless that environment carries this skill's ownership marker.
+
+PyInstaller's generated `build/` directory is ignored by Git. Commit or distribute `scripts/wellio.exe`; do not commit the generated build directory or a Conda environment.
 
 ## Environment location
 

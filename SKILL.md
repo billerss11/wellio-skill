@@ -7,22 +7,30 @@ description: Inspect and analyze offline oilfield well-log files with the Wellio
 
 Use Wellio as the data-retrieval engine. Answer the user's actual question from the retrieved data. Do not stop after explaining a command or dumping raw CLI output.
 
-## Run the bundled runtime
+## Run Wellio
 
 1. Confirm that the referenced log file is locally accessible. Ask for the file or path only when it is missing.
-2. Locate this skill's directory and use `scripts/run_wellio.py` for every Wellio operation. Do not clone, pull, or install the separate `Wellio_CLI` repository. Do not substitute a globally installed Wellio command.
-3. Invoke the launcher with an available Python interpreter and place Wellio arguments after `--`:
+2. Locate this skill's directory. On Windows, use `scripts/wellio.exe` first when it exists.
+3. Invoke the bundled executable directly:
+
+   ```text
+   "<skill-dir>/scripts/wellio.exe" info "<log-file>"
+   ```
+
+4. Fall back to `scripts/run_wellio.py` when the EXE is missing, the platform is not Windows, or the operating system cannot launch the EXE:
 
    ```text
    python "<skill-dir>/scripts/run_wellio.py" -- info "<log-file>"
    ```
 
-4. Let the launcher create and maintain the isolated runtime automatically. It installs the Wellio code bundled in this skill under `runtime/` and downloads only the declared third-party Python dependencies.
-5. Honor any environment location explicitly requested by the user by passing `--env-dir "<requested-path>"`. `WELLIO_ENV_DIR` is the next-priority override.
-6. Honor a requested environment manager with `--manager uv`, `--manager venv`, or `--manager conda`. Otherwise keep `--manager auto`: it prefers a dedicated Conda environment named `wellio-skill`, allowing Conda's configured `envs_dirs` to choose its location; if Conda is unavailable, it uses `uv` or `venv` in the safe platform default.
-7. Use the launcher's default Tsinghua PyPI mirror. It retries official PyPI once if the mirror fails. Honor a user-requested index with `--index-url` and optional `--fallback-index-url`.
-8. Never install into system Python, Conda `base`, `VIRTUAL_ENV`, or `CONDA_PREFIX`. Never delete or replace an existing non-Wellio directory.
-9. The launcher reports the resolved location when it first creates the runtime. Do not ask the user to choose a routine location. If no safe environment manager is available or a conflicting environment already exists, explain the blocker and ask for a location or permission before installing anything else.
+5. Do not fall back merely because a running EXE reports a Wellio command, selection, or input-file error. Report that error normally.
+6. Let the launcher create and maintain the isolated runtime automatically. It installs the Wellio code bundled under `runtime/` and downloads only its declared third-party dependencies.
+7. Honor an explicitly requested environment location with `--env-dir`. `WELLIO_ENV_DIR` is the next-priority override.
+8. Honor a requested manager with `--manager uv`, `--manager venv`, or `--manager conda`. Otherwise use `--manager auto`, which prefers the managed Conda environment `wellio-skill` before uv or venv.
+9. Use the launcher's default Tsinghua PyPI mirror and official-PyPI retry unless the user requests another index.
+10. Never install into system Python, Conda `base`, `VIRTUAL_ENV`, or `CONDA_PREFIX`. Never modify an existing environment that is not marked as managed by this skill.
+
+Do not clone, pull, or install the separate `Wellio_CLI` repository. Do not substitute a globally installed Wellio command.
 
 Treat reading and terminal output as the default. Create an output file only when the user requests one or when a temporary file is necessary to process a large result. Never use `--force` without explicit permission to replace that exact file.
 
