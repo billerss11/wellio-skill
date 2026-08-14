@@ -26,6 +26,8 @@ Use Wellio to retrieve data, then answer the user's question. Do not return only
 
 Never use a globally installed Wellio or clone the separate `Wellio_CLI` repository. Commands below use `wellio` as shorthand for the selected runner.
 
+Wellio emits strict UTF-8. LAS input is tried as strict UTF-8 first, then with legacy encoding detection; do not pre-convert files or strip non-ASCII metadata.
+
 ## Analyze the request
 
 1. Run `wellio info FILE` before querying an unfamiliar file.

@@ -62,6 +62,20 @@ if (-not (Test-Path -LiteralPath $ownerMarker -PathType Leaf)) {
     throw "Refusing to modify unmanaged Conda environment: $environmentPath"
 }
 
+$runtimeRoot = [System.IO.Path]::GetFullPath($runtimeDir).TrimEnd('\', '/') + '\'
+foreach ($artifact in @(
+    (Join-Path $runtimeDir "build"),
+    (Join-Path $runtimeSource "wellio_skill_runtime.egg-info")
+)) {
+    $artifactPath = [System.IO.Path]::GetFullPath($artifact)
+    if (-not $artifactPath.StartsWith($runtimeRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing to clean an artifact outside the runtime: $artifactPath"
+    }
+    if (Test-Path -LiteralPath $artifactPath) {
+        Remove-Item -LiteralPath $artifactPath -Recurse -Force
+    }
+}
+
 $primaryInstallArguments = @(
     "run", "-n", $environmentName,
     "python", "-m", "pip", "install", "--upgrade",

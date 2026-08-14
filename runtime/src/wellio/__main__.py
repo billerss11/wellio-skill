@@ -1,6 +1,6 @@
 """Run Wellio with ``python -m wellio``."""
 
-from wellio.cli import app
+from wellio.cli import main
 
 if __name__ == "__main__":
-    app()
+    main()

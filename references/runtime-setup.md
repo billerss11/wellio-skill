@@ -32,7 +32,8 @@ The launcher:
 
 Status, environment-creation, and package-installation messages go to stderr.
 Stdout is reserved for Wellio command output, so first-run JSON/CSV remains
-machine-parseable by another program or AI agent.
+machine-parseable by another program or AI agent. Both streams use strict
+UTF-8; changing the PowerShell code page is not required.
 
 Use launcher options before `--`:
 
@@ -64,9 +65,9 @@ powershell -ExecutionPolicy Bypass -File ".\scripts\build_portable_exe.ps1"
 Require Conda. The script:
 
 1. Safely reuses or creates the managed `wellio-skill` environment.
-2. Installs the bundled runtime and PyInstaller.
-3. Builds one Windows executable with only required packages.
-4. Writes `scripts/wellio.exe` and prints its size and SHA-256.
+2. Clears ignored wheel/build metadata from earlier builds.
+3. Installs the bundled runtime and PyInstaller.
+4. Builds `scripts/wellio.exe` and prints its size and SHA-256.
 
 The exact executable size can change with dependency builds. A successful
 build prints the final size and SHA-256. PyInstaller writes temporary files
@@ -78,12 +79,15 @@ After building, verify at minimum:
 ```text
 scripts\wellio.exe --help
 scripts\wellio.exe info FILE
+scripts\wellio.exe inspect UTF8_LAS --format json
 scripts\wellio.exe curve FILE ARRAY --rows 0:1 --format structured-json
 scripts\wellio.exe extract FILE --curve SCALAR --curve ARRAY --rows 0:1 --format parquet --output RESULT.parquet
 ```
 
 Confirm that structured JSON reports the expected selected shape and that the
 Parquet array field is nested with matching values and shape metadata.
+For a UTF-8 LAS fixture, include non-ASCII metadata and verify direct and piped
+output preserve it without mojibake.
 
 ## Recover from setup errors
 

@@ -13,7 +13,7 @@ Prefer the EXE on Windows. See [runtime-setup.md](runtime-setup.md) for fallback
 
 | Input | Support |
 |---|---|
-| LAS | LAS 2.0; wrapped or unwrapped |
+| LAS | LAS 2.0; wrapped or unwrapped; UTF-8 first with legacy-encoding fallback |
 | DLIS | RP66v1; scalar and arbitrary-rank array channels |
 | WITSML | Offline 1.4.1.1 `logs` XML with depth/time indexes and N-D arrays |
 | `.xml` | Routed to WITSML, then namespace/version validated |
@@ -74,6 +74,7 @@ Rules:
 - Long CSV emits one row per scalar element with enough row, shape, and axis columns to reconstruct every sample exactly.
 - Parquet keeps scalar columns primitive and array columns as nested lists with versioned shape/dimension metadata.
 - Print small text, CSV, or JSON results to stdout when `--output` is omitted.
+- Encode stdout and stderr as strict UTF-8, including redirected and piped output.
 - Refuse stdout selections above 100,000 index/curve values before serialization. Every scalar element inside an N-D sample counts.
 - Refuse final UTF-8 stdout payloads above 256 KiB. Use a smaller slice, `--output PATH`, or the explicit `--force-stdout` override.
 - Require `--output PATH` for Parquet.

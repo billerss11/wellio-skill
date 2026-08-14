@@ -59,7 +59,7 @@ def read_las(path: str | Path) -> Dataset:
     if not source.is_file():
         raise IsADirectoryError(f"Well-log path is not a file: {source}")
 
-    native = lasio.read(source, mnemonic_case="preserve")
+    native = _read_native(source)
     curves = [_to_curve(curve) for curve in native.curves]
     index = curves[0] if curves else None
 
@@ -73,6 +73,20 @@ def read_las(path: str | Path) -> Dataset:
         sections=_extract_sections(native),
         native=native,
     )
+
+
+def _read_native(source: Path) -> lasio.LASFile:
+    """Prefer lossless UTF-8, then retain lasio's legacy-file fallback."""
+
+    try:
+        return lasio.read(
+            source,
+            mnemonic_case="preserve",
+            encoding="utf-8-sig",
+            encoding_errors="strict",
+        )
+    except UnicodeDecodeError:
+        return lasio.read(source, mnemonic_case="preserve")
 
 
 def _to_curve(curve: Any) -> Curve:
